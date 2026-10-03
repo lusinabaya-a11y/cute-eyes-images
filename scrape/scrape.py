@@ -21,33 +21,28 @@ def page_info(u):
     for k in ['sku','gtin','mpn']:
         m=re.search(r'"%s"\s*:\s*"([^"]*)"'%k,h); info[k]=m.group(1) if m else None
     return info
-# 1) Cute Eyes sitemap
-def sitemap_urls(u,seen=None):
-    seen=seen or set(); urls=[]
-    r=get(u)
-    if r is None or r.status_code!=200: return urls
-    locs=re.findall(r'<loc>\s*([^<\s]+)\s*</loc>',r.text)
-    for l in locs:
-        l=l.replace('&amp;','&')
-        if l.endswith('.xml') and l not in seen: seen.add(l); urls+=sitemap_urls(l,seen)
-        else: urls.append(l)
-    return urls
-sm=sitemap_urls('https://cute-eyes.com/sitemap.xml')
-out['ce_sitemap']=sm
-prod=[u for u in sm if re.search(r'/p\d+(/|$|\?)',u)]
-with cf.ThreadPoolExecutor(8) as ex: out['ce_products']=list(ex.map(page_info,prod))
-# 2) storefront API attempt
-api=[]
-for p in range(1,30):
-    r=get('https://api.salla.dev/store/v1/products?per_page=50&page=%d'%p,headers={'Store-Identifier':'45801993','Accept':'application/json'})
+# 2) storefront API following cursor
+api=[]; url='https://api.salla.dev/store/v1/products?per_page=50'
+seen=set()
+for p in range(60):
+    r=get(url,headers={'Store-Identifier':'45801993','Accept':'application/json'})
     if r is None: break
     try: j=r.json()
     except Exception: api.append({'status':r.status_code,'text':r.text[:500]}); break
     api.append(j)
-    if not j.get('data') or not (j.get('cursor') or {}).get('next') and not (j.get('pagination') or {}).get('links',{}).get('next'): break
+    nxt=(j.get('cursor') or {}).get('next')
+    if not j.get('data') or not nxt or nxt in seen: break
+    seen.add(nxt); url=nxt; time.sleep(0.5)
 out['ce_api']=api
 # 3) old links
 olds=[l.strip() for l in open('scrape/old_links.txt') if l.strip()]
-with cf.ThreadPoolExecutor(8) as ex: out['old_links']=list(ex.map(page_info,olds))
+res=[]
+for u in olds:
+    for i in range(6):
+        x=page_info(u)
+        if x.get('status')!=429: break
+        time.sleep(5*(i+1))
+    res.append(x); time.sleep(1.2)
+out['old_links']=res
 json.dump(out,open('scrape/result.json','w'),ensure_ascii=False)
-print('sitemap',len(sm),'prod',len(prod),'old',len(olds))
+print('api pages',len(api),'old',len(olds))
