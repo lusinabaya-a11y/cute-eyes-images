@@ -1,0 +1,26 @@
+name: scrape-catalog
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [scrape/**, .github/workflows/scrape.yml]
+permissions:
+  contents: write
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests
+      - run: python3 scrape/scrape.py
+      - name: Push data branch
+        run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mkdir -p /tmp/out && cp scrape/result.json /tmp/out/
+          git checkout --orphan data
+          git rm -rf --cached . >/dev/null
+          cp /tmp/out/result.json ./result.json
+          git add result.json
+          git commit -q -m "Scrape result"
+          git push -f origin data
