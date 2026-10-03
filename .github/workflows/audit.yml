@@ -1,0 +1,24 @@
+name: audit-products
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests opencv-python-headless numpy pillow
+      - run: python3 audit/run.py
+      - run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mv audit_out /tmp/audit_out
+          git checkout --orphan audit
+          git rm -rf --cached . >/dev/null
+          rm -rf ./*
+          cp -r /tmp/audit_out ./audit_out
+          git add audit_out
+          git commit -q -m "Cute Eyes product audit"
+          git push -f origin audit
