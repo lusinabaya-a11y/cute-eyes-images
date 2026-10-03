@@ -112,14 +112,18 @@ for name, fn, ts in [('A', 'audit/tpl.png', 2.0), ('B', 'audit/tplB.png', 2.0), 
     rgb = cv2.cvtColor(cv2.imread(fn), cv2.COLOR_BGR2RGB)
     g = cv2.cvtColor(cv2.resize(rgb, None, fx=ts, fy=ts, interpolation=cv2.INTER_CUBIC), cv2.COLOR_RGB2GRAY)
     k, dsc = sift.detectAndCompute(g, None); TPL[name] = (k, dsc); TSS[name] = ts
-ICONS = [cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2GRAY) for f in ('audit/iconA.png', 'audit/iconB.png')]
-def ncc_icons(g):
-    best = (0.0, None)
-    for ic in ICONS:
-        for sc in (0.35, 0.45, 0.55, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.1):
-            t = cv2.resize(ic, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC)
-            if t.shape[0] >= g.shape[0] or t.shape[1] >= g.shape[1] or t.shape[0] < 12: continue
-            r = cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED)
+def gold(bgr):
+    h = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    return ((h[..., 0] >= 5) & (h[..., 0] <= 25) & (h[..., 1] >= 35) & (h[..., 1] <= 200) & (h[..., 2] >= 90)).astype(np.float32)
+GICONS = [gold(cv2.imread(f)) for f in ('audit/iconA.png', 'audit/iconB.png')]
+def ncc_icons(bgr):
+    G = gold(bgr); best = (0.0, None)
+    if G.sum() < 20: return best
+    for ic in GICONS:
+        for sc in (0.35, 0.45, 0.55, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.1, 2.5):
+            t = cv2.resize(ic, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+            if t.shape[0] >= G.shape[0] or t.shape[1] >= G.shape[1] or t.shape[0] < 12: continue
+            r = cv2.matchTemplate(G, t, cv2.TM_CCOEFF_NORMED); r[~np.isfinite(r)] = 0
             _, mx, _, loc = cv2.minMaxLoc(r)
             if mx > best[0]: best = (float(mx), [int(loc[0]), int(loc[1]), int(t.shape[1]), int(t.shape[0])])
     return best
@@ -166,9 +170,11 @@ def scan(job):
         for t in TPL: res[t] = {'inl': 0}
     else:
         for t in TPL: res[t] = match(t, ik, idd, k)
-    res['ncc'], res['ncc_box'] = ncc_icons(g)
+    bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    if max(H, W) > 1000: bgr = cv2.resize(bgr, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
+    res['ncc'], res['ncc_box'] = ncc_icons(bgr)
     sane = lambda d: d.get('inl', 0) >= 6 and 0.15 < d.get('s', 0) < 3
-    if any(sane(res[t]) for t in TPL) or res['ncc'] >= 0.55:
+    if any(sane(res[t]) for t in TPL) or res['ncc'] >= 0.6:
         res['thumb'] = '%s_%s.jpg' % (pid, abs(hash(u)) % 10**9)
         th = Image.fromarray(img); th.thumbnail((500, 500)); th.save('%s/thumbs/%s' % (OUT, res['thumb']), quality=80)
     os.remove(fn)
