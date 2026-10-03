@@ -60,32 +60,12 @@ def product(pid):
     rec['text_hits'] = hits
     rec['links'] = [html.unescape(h[1]).strip() for h in HREF.findall(desc)]
     rec['desc_imgs'] = [html.unescape(s[1]).strip() for s in IMGSRC.findall(desc)]
-    # product page: full gallery + any old name anywhere in the product page
-    page = get(rec['url'], headers={'User-Agent': UA, 'Accept-Language': 'ar'}) if rec['url'] else None
-    if page is None or page.status_code != 200:
-        rec['page_err'] = page.status_code if page is not None else 'fail'
-        rec['gallery'] = [rec['main_img']] if rec['main_img'] else []
-        return rec
-    t = page.text
-    best = {}
-    for m in GAL.finditer(t):
-        uid, w, h = m.group(1), float(m.group(2)), float(m.group(3))
-        if uid not in best or w * h > best[uid][0]:
-            best[uid] = (w * h, m.group(0))
-    desc_set = set(rec['desc_imgs'])
-    rec['gallery'] = [u for _, u in best.values() if u not in desc_set]
-    page_hits = []
-    for m in OLD_NAME.finditer(t):
-        page_hits.append(ctx(t, m, 80))
-    rec['page_hits'] = page_hits[:20]
-    alts = re.findall(r'alt=(["\'])(.*?)\1', t)
-    rec['alt_hits'] = sorted({a[1] for a in alts if OLD_NAME.search(a[1])})
+    rec['gallery'] = [rec['main_img']] if rec['main_img'] else []
     return rec
 
 t0 = time.time()
 with cf.ThreadPoolExecutor(6) as ex:
     recs = list(ex.map(product, ids))
-print('page 429s left', sum(r.get('page_err') == 429 for r in recs))
 print('products', len(recs), 'errors', sum('err' in r for r in recs), 'page errors', sum('page_err' in r for r in recs), round(time.time() - t0), 's')
 
 # ---- link checks
@@ -146,8 +126,11 @@ def match(name, ik, idd, k):
     return {'n': len(good), 'inl': int(inl.sum()), 's': float(np.hypot(M[0, 0], M[1, 0])), 'tx': float(M[0, 2]), 'ty': float(M[1, 2])}
 
 jobs = []
+for pid, kind, u in json.load(open('audit/src_imgs.json')): jobs.append((pid, 'src_' + kind, u))
+for l in open('audit/ce_urls.txt'):
+    if l.strip(): pid, u = l.rstrip('\n').split('\t'); jobs.append((pid, 'ce_existing', u))
 for r in recs:
-    for u in r.get('gallery', []): jobs.append((r['id'], 'gallery', u))
+    for u in r.get('gallery', []): jobs.append((r['id'], 'live_main', u))
     for u in r.get('desc_imgs', []):
         if u.startswith('http'): jobs.append((r['id'], 'desc', u))
 def scan(job):
