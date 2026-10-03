@@ -1,0 +1,23 @@
+name: fetch-cute-eyes-images
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [ce_urls.txt, ce/fetch.py, .github/workflows/ce.yml]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 ce/fetch.py
+      - name: Push ce-images branch
+        run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan ce-images
+          git rm -rf --cached . >/dev/null
+          git add ce_images
+          git commit -q -m "Cute Eyes current product images"
+          git push -f origin ce-images
