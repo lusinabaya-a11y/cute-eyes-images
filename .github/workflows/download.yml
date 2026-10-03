@@ -1,0 +1,23 @@
+name: download-originals
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [urls.txt, scripts/download.py, .github/workflows/download.yml]
+permissions:
+  contents: write
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/download.py
+      - name: Push originals branch
+        run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout --orphan originals
+          git rm -rf --cached . >/dev/null
+          git add originals download_failures.txt
+          git commit -q -m "Original product images"
+          git push -f origin originals
