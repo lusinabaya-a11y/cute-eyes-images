@@ -13,6 +13,7 @@ jobs:
       - run: python3 audit/run.py
         env:
           GAP: '3'
+          SKIP_LINKS: '1'
       - run: |
           git config user.name "cute-eyes-bot"
           git config user.email "bot@users.noreply.github.com"

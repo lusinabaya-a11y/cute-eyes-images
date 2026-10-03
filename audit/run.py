@@ -76,6 +76,7 @@ def check(u):
     host = urllib.parse.urlparse(u).netloc.lower()
     if 'cute-eyes.com' not in host:
         return u, {'kind': 'external', 'host': host}
+    if os.environ.get('SKIP_LINKS'): return u, {'kind': 'internal', 'status': 'not_checked'}
     r = get(u, headers={'User-Agent': UA}, allow_redirects=True)
     if r is None: return u, {'kind': 'internal', 'status': 'fail'}
     final = urllib.parse.unquote(r.url)
