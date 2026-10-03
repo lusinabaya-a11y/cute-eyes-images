@@ -1,0 +1,26 @@
+name: audit-existing
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests opencv-python-headless numpy pillow
+      - run: python3 audit/existing.py
+        env:
+          GAP: '4'
+      - run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mv audit_out /tmp/audit_out
+          git checkout --orphan audit-existing
+          git rm -rf --cached . >/dev/null
+          rm -rf ./*
+          cp -r /tmp/audit_out ./audit_out
+          git add audit_out
+          git commit -q -m "Existing products gallery audit"
+          git push -f origin audit-existing
