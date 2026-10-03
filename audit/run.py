@@ -14,13 +14,25 @@ GAL = re.compile(r'https://cdn\.salla\.sa/mQNzdE/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-
 HREF = re.compile(r'<a\b[^>]*href=(["\'])(.*?)\1', re.I | re.S)
 IMGSRC = re.compile(r'<img\b[^>]*src=(["\'])(.*?)\1', re.I | re.S)
 
+import threading
+_lock = threading.Lock(); _last = [0.0]; GAP = float(os.environ.get('GAP', '0.8'))
 def get(u, **kw):
-    for i in range(4):
+    site = 'cute-eyes.com' in u
+    for i in range(8):
+        if site:
+            with _lock:
+                wait = _last[0] + GAP - time.time()
+                if wait > 0: time.sleep(wait)
+                _last[0] = time.time()
         try:
-            return requests.get(u, timeout=45, **kw)
+            r = requests.get(u, timeout=45, **kw)
         except Exception:
-            time.sleep(2 * (i + 1))
-    return None
+            time.sleep(2 * (i + 1)); continue
+        if r.status_code == 429 or (site and r.status_code >= 500):
+            ra = r.headers.get('Retry-After')
+            time.sleep(min(int(ra) if ra and ra.isdigit() else 20 * (i + 1), 120)); continue
+        return r
+    return r if 'r' in dir() else None
 
 def strip(h):
     return html.unescape(re.sub(r'<[^>]+>', ' ', h or '')).replace('\xa0', ' ')
@@ -73,6 +85,7 @@ def product(pid):
 t0 = time.time()
 with cf.ThreadPoolExecutor(6) as ex:
     recs = list(ex.map(product, ids))
+print('page 429s left', sum(r.get('page_err') == 429 for r in recs))
 print('products', len(recs), 'errors', sum('err' in r for r in recs), 'page errors', sum('page_err' in r for r in recs), round(time.time() - t0), 's')
 
 # ---- link checks
