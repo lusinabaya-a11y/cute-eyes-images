@@ -1,0 +1,22 @@
+name: product-status
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests && python3 audit/status.py
+      - run: |
+          git config user.name "cute-eyes-bot"
+          git config user.email "bot@users.noreply.github.com"
+          mv status_out /tmp/status_out
+          git checkout --orphan status
+          git rm -rf --cached . >/dev/null
+          rm -rf ./*
+          cp -r /tmp/status_out ./status_out
+          git add status_out
+          git commit -q -m "Product status snapshot"
+          git push -f origin status
