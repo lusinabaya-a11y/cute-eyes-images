@@ -107,11 +107,22 @@ with cf.ThreadPoolExecutor(6) as ex:
 print('links', len(links), round(time.time() - t0), 's')
 
 # ---- images: download + logo detection
-sift = cv2.SIFT_create(); TS = 2.0; TPL = {}
-for name, fn in [('A', 'audit/tpl.png'), ('B', 'audit/tplB.png')]:
+sift = cv2.SIFT_create(); TPL = {}; TSS = {}
+for name, fn, ts in [('A', 'audit/tpl.png', 2.0), ('B', 'audit/tplB.png', 2.0), ('iA', 'audit/iconA.png', 3.0), ('iB', 'audit/iconB.png', 3.0), ('tA', 'audit/textA.png', 3.0), ('tB', 'audit/textB.png', 3.0)]:
     rgb = cv2.cvtColor(cv2.imread(fn), cv2.COLOR_BGR2RGB)
-    g = cv2.cvtColor(cv2.resize(rgb, None, fx=TS, fy=TS, interpolation=cv2.INTER_CUBIC), cv2.COLOR_RGB2GRAY)
-    k, dsc = sift.detectAndCompute(g, None); TPL[name] = (k, dsc)
+    g = cv2.cvtColor(cv2.resize(rgb, None, fx=ts, fy=ts, interpolation=cv2.INTER_CUBIC), cv2.COLOR_RGB2GRAY)
+    k, dsc = sift.detectAndCompute(g, None); TPL[name] = (k, dsc); TSS[name] = ts
+ICONS = [cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2GRAY) for f in ('audit/iconA.png', 'audit/iconB.png')]
+def ncc_icons(g):
+    best = (0.0, None)
+    for ic in ICONS:
+        for sc in (0.35, 0.45, 0.55, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.1):
+            t = cv2.resize(ic, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC)
+            if t.shape[0] >= g.shape[0] or t.shape[1] >= g.shape[1] or t.shape[0] < 12: continue
+            r = cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED)
+            _, mx, _, loc = cv2.minMaxLoc(r)
+            if mx > best[0]: best = (float(mx), [int(loc[0]), int(loc[1]), int(t.shape[1]), int(t.shape[0])])
+    return best
 
 def load_rgb(path):
     im = Image.open(path)
@@ -124,7 +135,7 @@ def match(name, ik, idd, k):
     ms = cv2.BFMatcher(cv2.NORM_L2).knnMatch(td, idd, k=2)
     good = [m for m, n in (p for p in ms if len(p) == 2) if m.distance < 0.75 * n.distance]
     if len(good) < 6: return {'n': len(good), 'inl': 0}
-    src = np.float32([tk[m.queryIdx].pt for m in good]) / TS
+    src = np.float32([tk[m.queryIdx].pt for m in good]) / TSS[name]
     dst = np.float32([ik[m.trainIdx].pt for m in good]) / k
     M, inl = cv2.estimateAffinePartial2D(src, dst, method=cv2.RANSAC, ransacReprojThreshold=4)
     if M is None: return {'n': len(good), 'inl': 0}
@@ -152,10 +163,12 @@ def scan(job):
     ik, idd = sift.detectAndCompute(g, None)
     res = {'id': pid, 'kind': kind, 'url': u, 'W': W, 'H': H}
     if idd is None or len(ik) < 2:
-        res['A'] = res['B'] = {'inl': 0}
+        for t in TPL: res[t] = {'inl': 0}
     else:
-        res['A'] = match('A', ik, idd, k); res['B'] = match('B', ik, idd, k)
-    if max(res['A'].get('inl', 0), res['B'].get('inl', 0)) >= 8:
+        for t in TPL: res[t] = match(t, ik, idd, k)
+    res['ncc'], res['ncc_box'] = ncc_icons(g)
+    sane = lambda d: d.get('inl', 0) >= 6 and 0.15 < d.get('s', 0) < 3
+    if any(sane(res[t]) for t in TPL) or res['ncc'] >= 0.55:
         res['thumb'] = '%s_%s.jpg' % (pid, abs(hash(u)) % 10**9)
         th = Image.fromarray(img); th.thumbnail((500, 500)); th.save('%s/thumbs/%s' % (OUT, res['thumb']), quality=80)
     os.remove(fn)
